@@ -1,34 +1,30 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageTurn, CopilotOutput } from '@/lib/types'
+import { MessageTurn, CopilotOutput, CustomerContext } from '@/lib/types'
 import { useDeepgramStream } from '@/hooks/useDeepgramStream'
 
 // Simulation defaults
-const MOCK_TRANSCRIPT_INPUTS: { speaker: "customer" | "agent_ai"; text: string }[] = [
-  { speaker: "customer", text: "Hi, I am looking at my bill and I was charged twice this month for the data plan." },
-  { speaker: "agent_ai", text: "I'm sorry to hear that. Let me look up your account details. Can you confirm your phone number?" },
-  { speaker: "customer", text: "It is 555-0199. I already called yesterday and the representative said it would be fixed, but nothing happened." },
-  { speaker: "agent_ai", text: "Thank you. I see the record of your call. It looks like the refund is still pending approval." },
-  { speaker: "customer", text: "This is very frustrating. I've been with you for 5 years and I'm honestly ready to switch to another provider if this is how you treat customers." },
-  { speaker: "agent_ai", text: "I completely understand your frustration. We value your loyalty. Let me see what I can do to expedite this." },
-  { speaker: "customer", text: "I've heard that before. I WANT TO SPEAK TO A MANAGER RIGHT NOW. THIS IS UNACCEPTABLE." },
-  { speaker: "agent_ai", text: "I understand. I am initiating a transfer to my supervisor immediately." }
+const MOCK_TRANSCRIPT_INPUTS = [
+  { speaker: "customer", text: "Hi, I'm calling about a duplicate recharge on my Prepaid account. I was charged $50 twice." },
+  { speaker: "agent_ai", text: "I'm sorry for that billing mismatch. Let me check your account details." },
+  { speaker: "customer", text: "I've been with Telco for 8 years and this is the third time this month there's been a data pack issue." },
+  { speaker: "agent_ai", text: "I understand your frustration. Given your loyalty, I'm prioritizing this right now." },
+  { speaker: "customer", text: "I want to port-out to a different provider if this isn't resolved today. I'm tired of these plan renewal failures." }
 ]
 
-const MOCK_AGENT_REPLIES = [
-  "I understand. Let me look into that for you.",
-  "I see progress on your ticket, but it's taking longer than expected. I apologize.",
-  "That sounds concerning. I'm prioritizing this right now.",
-  "I have noted your concern. A supervisor will be able to help further."
-];
-
-export default function CopilotDashboard() {
+export default function TelcoCopilotDashboard() {
   const [transcript, setTranscript] = useState<MessageTurn[]>([])
   const [currentManualIndex, setCurrentManualIndex] = useState(0)
   const [analysis, setAnalysis] = useState<CopilotOutput | null>(null)
+  const [customerContext, setCustomerContext] = useState<CustomerContext | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [interimTranscript, setInterimTranscript] = useState("")
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [customerId, setCustomerId] = useState<string | null>(null)
+  const [phoneNumber, setPhoneNumber] = useState("555-0199") 
+  const [callEnded, setCallEnded] = useState(false)
+  
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -37,43 +33,23 @@ export default function CopilotDashboard() {
     }
   }, [transcript, interimTranscript])
 
-  const runAnalysis = async (history: MessageTurn[], latest: MessageTurn) => {
-    setIsLoading(true)
-    try {
-      const resp = await fetch('/api/copilot/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcriptHistory: history, latestMessage: latest })
-      })
-      const data = await resp.json()
-      setAnalysis(data)
-    } catch (err) {
-      console.error("Analysis error:", err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const addTurn = useCallback(async (speaker: "customer" | "agent_ai", text: string) => {
-    setTranscript((prev) => {
-      const turnId = prev.length + 1;
-      const turn: MessageTurn = {
-        turnId,
-        speaker,
-        text,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      
-      const newHistory = [...prev, turn];
-      runAnalysis(prev, turn);
-      return newHistory;
-    });
-  }, []);
+  // Initialize Session
+  useEffect(() => {
+    const startSession = async () => {
+      const resp = await fetch('/api/sessions/start', { 
+        method: 'POST', 
+        body: JSON.stringify({ phoneNumber, channelType: 'simulation' }) 
+      });
+      const data = await resp.json();
+      setSessionId(data.sessionId);
+      setCustomerId(data.customerId);
+    };
+    startSession();
+  }, [phoneNumber]);
 
   const handleVoiceTranscript = async (text: string, isFinal: boolean) => {
     if (isFinal) {
       setInterimTranscript("");
-      
       const customerTurn: MessageTurn = {
         turnId: Date.now(),
         speaker: 'customer',
@@ -88,24 +64,32 @@ export default function CopilotDashboard() {
         const resp = await fetch('/api/chat/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcriptHistory: transcript, latestMessage: customerTurn })
+          body: JSON.stringify({ 
+            transcriptHistory: transcript, 
+            latestMessage: customerTurn, 
+            sessionId,
+            phoneNumber 
+          })
         });
 
-        if (!resp.ok) throw new Error("Orchestrator failed");
         const data = await resp.json();
-
+        if (!resp.ok) throw new Error(data.error || "Failed turn");
+        
         setAnalysis(data.copilot);
+        setCustomerContext(data.customerContext);
 
-        const agentTurn: MessageTurn = {
-          turnId: Date.now() + 1,
-          speaker: 'agent_ai',
-          text: data.agent.reply,
-          timestamp: new Date().toLocaleTimeString()
-        };
-        setTranscript(prev => [...prev, agentTurn]);
+        if (data.agent) {
+          const agentTurn: MessageTurn = {
+            turnId: Date.now() + 1,
+            speaker: 'agent_ai',
+            text: data.agent.reply,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setTranscript(prev => [...prev, agentTurn]);
+        }
 
       } catch (err) {
-        console.error("Orchestrator error:", err);
+        console.error("error:", err);
       } finally {
         setIsLoading(false);
       }
@@ -119,160 +103,217 @@ export default function CopilotDashboard() {
   });
 
   const handleManualNextTurn = async () => {
-    if (currentManualIndex >= MOCK_TRANSCRIPT_INPUTS.length) return
+    if (currentManualIndex >= MOCK_TRANSCRIPT_INPUTS.length || callEnded) return
     const next = MOCK_TRANSCRIPT_INPUTS[currentManualIndex];
-    addTurn(next.speaker, next.text);
+    
+    setIsLoading(true);
+    const customerTurn: MessageTurn = {
+      turnId: Date.now(),
+      speaker: next.speaker as "customer" | "agent_ai",
+      text: next.text,
+      timestamp: new Date().toLocaleTimeString()
+    };
+
+    const resp = await fetch('/api/chat/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        transcriptHistory: transcript, 
+        latestMessage: customerTurn, 
+        sessionId,
+        phoneNumber 
+      })
+    });
+    const data = await resp.json();
+    setAnalysis(data.copilot);
+    setCustomerContext(data.customerContext);
+    setTranscript(prev => [...prev, customerTurn]);
     setCurrentManualIndex(prev => prev + 1);
+    setIsLoading(false);
   };
 
-  const handleReset = () => {
-    setTranscript([])
-    setCurrentManualIndex(0)
-    setAnalysis(null)
-    setInterimTranscript("")
-  }
+  const endCall = async () => {
+    setCallEnded(true);
+    if (!sessionId || !customerId) return;
+    await fetch('/api/sessions/end', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, customerId, latestInsight: analysis })
+    });
+  };
 
   return (
     <div className="dashboard-container">
-      <header>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <header className="premium-header">
+        <div className="header-left">
           <div className="logo">TELCO COPILOT AI</div>
-          <div style={{ fontSize: '0.8rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontWeight: 'bold' }}>
-            SECURE VOICE ACTIVE
-          </div>
+          <div className="status-badge">SECURE VOICE ACTIVE</div>
         </div>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button onClick={handleReset} style={{ background: 'var(--secondary)', border: '1px solid var(--border)' }}>Reset</button>
-          
+        <div className="header-actions">
+          <div className="phone-input-group">
+            <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>ACTIVE LINE</span>
+            <input 
+              value={phoneNumber} 
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              className="phone-input"
+            />
+          </div>
           <button 
             onClick={isRecording ? stopStreaming : startStreaming}
-            style={{ 
-              background: isRecording ? 'var(--danger)' : 'var(--primary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              minWidth: '200px'
-            }}
+            className={`voice-btn ${isRecording ? 'active' : ''}`}
           >
-            {isRecording ? "Stop Voice Mode" : "Start Voice Mode"}
-            {isRecording && (
-              <div style={{ display: 'flex', gap: '2px', alignItems: 'flex-end', height: '12px' }}>
-                {[1,2,3,4].map(i => (
-                  <div key={i} style={{ width: '3px', background: 'white', height: `${Math.max(2, audioLevel * 100 * (i/2))}px` }} />
-                ))}
-              </div>
-            )}
+            {isRecording ? "Stop Listen" : "Start Listen"}
           </button>
-
-          <button onClick={handleManualNextTurn} disabled={currentManualIndex >= MOCK_TRANSCRIPT_INPUTS.length || isLoading}>
+          <button onClick={handleManualNextTurn} disabled={isLoading || callEnded} className="simulation-btn">
             {isLoading ? "Analyzing..." : "Simulation Turn"}
           </button>
+          <button onClick={endCall} className="end-call-btn" disabled={callEnded}>End Call</button>
         </div>
       </header>
 
-      <main className="main-content">
-        <div className="transcript-panel" ref={scrollRef}>
-          <div className="card-title">Live Conversation Transcript</div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: '1rem' }}>
-            {transcript.length === 0 && !interimTranscript && (
-              <div style={{ textAlign: 'center', color: '#71717a', marginTop: '4rem' }}>
-                Start voice mode or simulation to begin analysis.
+      <main className="dashboard-grid">
+        {/* Left Column: Customer Snapshot */}
+        <section className="dashboard-column customer-column">
+          <div className="card customer-card">
+            <div className="card-header">
+              <span className="card-title">CUSTOMER SNAPSHOT</span>
+              {customerContext?.customerSnapshot.vipStatus && <span className="vip-badge">VIP</span>}
+            </div>
+            {customerContext ? (
+              <div className="customer-details">
+                <div className="detail-row">
+                  <span className="label">NAME</span>
+                  <span className="value">{customerContext.customerSnapshot.name}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="label">PLAN</span>
+                  <span className="value">{customerContext.customerSnapshot.planType}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="label">REGION</span>
+                  <span className="value">{customerContext.customerSnapshot.region}</span>
+                </div>
+                <hr className="divider" />
+                <div className="stats-grid">
+                  <div className="stat-box">
+                    <span className="label">CHURN RISK</span>
+                    <span className="value risk-high">{(customerContext.customerSnapshot.churnRisk || 0 * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="label">BILLING ISSUES</span>
+                    <span className="value">{customerContext.supportHistory.billingIssues}</span>
+                  </div>
+                </div>
+                <div className="context-hints">
+                  {customerContext.personalizationHints.map((hint, i) => (
+                    <div key={i} className="hint-pill">{hint}</div>
+                  ))}
+                </div>
               </div>
-            )}
-            {transcript.map((msg) => (
-              <div key={msg.turnId} className={`message ${msg.speaker === 'customer' ? 'customer' : 'agent'}`}>
-                <div className="message-bubble">{msg.text}</div>
-                <div className="message-meta">{msg.speaker === 'customer' ? 'Customer' : 'AI Agent'} • {msg.timestamp}</div>
-              </div>
-            ))}
-            {interimTranscript && (
-              <div className="message customer" style={{ opacity: 0.6 }}>
-                <div className="message-bubble" style={{ borderStyle: 'dashed' }}>{interimTranscript}...</div>
-                <div className="message-meta">Customer speaking...</div>
-              </div>
+            ) : (
+              <div className="empty-state">No customer data loaded.</div>
             )}
           </div>
-        </div>
-      </main>
 
-      <aside className="copilot-sidebar">
-        <div className="card">
-          <div className="card-title">Analysis Summary</div>
-          {analysis ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.2rem' }}>SENTIMENT</div>
-                <div className="sentiment-label" style={{ 
-                  color: analysis.sentiment === 'Angry' ? 'var(--danger)' : 
-                         analysis.sentiment === 'Frustrated' ? 'var(--warning)' : 
-                         analysis.sentiment === 'Mildly Frustrated' ? '#fde047' : 'var(--success)'
-                }}>
-                  {analysis.sentiment}
+          <div className="card">
+            <div className="card-title">TELCO MEMORY</div>
+            <div className="empty-state">Identifying relevant history...</div>
+          </div>
+        </section>
+
+        {/* Center Column: Transcript */}
+        <section className="dashboard-column transcript-column">
+          <div className="card transcript-card" ref={scrollRef}>
+            <div className="card-header">
+              <span className="card-title">LIVE TRANSCRIPTION</span>
+              <span className="typing-indicator">DEEPGRAM NOVA-2 ACTIVE</span>
+            </div>
+            <div className="transcript-flow">
+              {transcript.map((msg) => (
+                <div key={msg.turnId} className={`msg-group ${msg.speaker}`}>
+                  <div className="msg-bubble">{msg.text}</div>
+                  <div className="msg-meta">{msg.speaker === 'customer' ? 'Customer' : 'AI Agent'} • {msg.timestamp}</div>
                 </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>INTENT</div>
-                  <div style={{ fontWeight: '600' }}>{analysis.intent}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>RISK</div>
-                  <span className={`badge ${analysis.riskLevel.toLowerCase()}`}>{analysis.riskLevel}</span>
-                </div>
-              </div>
-              {analysis.riskTags.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.4rem' }}>RISK TAGS</div>
-                  <div>
-                    {analysis.riskTags.map(tag => <span key={tag} className="pill" style={{ background: 'rgba(99, 102, 241, 0.1)', borderColor: 'var(--primary)', color: 'white' }}>{tag}</span>)}
-                  </div>
+              ))}
+              {interimTranscript && (
+                <div className="msg-group customer interim">
+                  <div className="msg-bubble">{interimTranscript}...</div>
                 </div>
               )}
             </div>
-          ) : (
-            <div style={{ color: '#71717a', fontSize: '0.875rem' }}>Waiting for speech or interaction...</div>
-          )}
-        </div>
+          </div>
+        </section>
 
-        <div className="card">
-          <div className="card-title">Next Best Action</div>
-          {analysis ? (
-            <div>
-              {analysis.suggestions.map((s) => (
-                <div key={s.rank} className="suggestion-item">
-                  <div className="suggestion-type">{s.type}</div>
-                  <div style={{ fontSize: '0.875rem' }}>{s.text}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#71717a', marginTop: '0.4rem', textAlign: 'right' }}>
-                    Confidence: {(s.confidence * 100).toFixed(0)}%
+        {/* Right Column: Copilot Insights */}
+        <section className="dashboard-column insights-column">
+          <div className="card insights-card">
+            <div className="card-title">REAL-TIME COPILOT</div>
+            {analysis ? (
+              <div className="insights-content">
+                <div className="insight-section">
+                  <div className="insight-label">SENTIMENT</div>
+                  <div className={`sentiment-val ${analysis.sentiment.toLowerCase()}`}>{analysis.sentiment}</div>
+                  <p className="explain-text">{analysis.explanations?.sentiment}</p>
+                </div>
+                
+                <div className="insight-section grid-2">
+                  <div>
+                    <div className="insight-label">INTENT</div>
+                    <div className="value-bold">{analysis.intent}</div>
+                  </div>
+                  <div>
+                    <div className="insight-label">CHURN WATCH</div>
+                    <span className={`badge ${analysis.riskLevel.toLowerCase()}`}>{analysis.riskLevel}</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ color: '#71717a', fontSize: '0.875rem' }}>Suggestions will appear here.</div>
-          )}
-        </div>
 
-        <div className="card">
-          <div className="card-title">Facts Extracted</div>
-          {analysis && analysis.memoryFacts.length > 0 ? (
-            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.875rem' }}>
-              {analysis.memoryFacts.map((fact, i) => (
-                <li key={i} style={{ marginBottom: '0.5rem', color: '#d4d4d8' }}>{fact}</li>
-              ))}
-            </ul>
-          ) : (
-            <div style={{ color: '#71717a', fontSize: '0.875rem' }}>No facts detected yet.</div>
-          )}
-        </div>
-
-        {analysis?.escalation.needed && (
-          <div className="escalation-alert">
-            <div style={{ fontWeight: '700', fontSize: '0.9rem' }}>⚠️ ESCALATION RECOMMENDED</div>
-            <div style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>{analysis.escalation.reason}</div>
+                <div className="insight-section">
+                  <div className="insight-label">NEXT BEST ACTION</div>
+                  {analysis.suggestions.map((s, i) => (
+                    <div key={i} className="suggestion-box">
+                      <div className="sugg-type">{s.type}</div>
+                      <div className="sugg-text">{s.text}</div>
+                    </div>
+                  ))}
+                  <p className="explain-text">{analysis.explanations?.nextBestAction}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">Waiting for voice input...</div>
+            )}
           </div>
-        )}
-      </aside>
+
+          {analysis?.escalation.needed && (
+            <div className="escalation-alert">
+              <div className="alert-title">⚠️ ESCALATION RECOMMENDED</div>
+              <div className="alert-reason">{analysis.escalation.reason}</div>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* End of Call Summary Modal */}
+      {callEnded && (
+        <div className="summary-overlay">
+          <div className="summary-modal">
+            <h2>CALL RESOLUTION SUMMARY</h2>
+            <div className="summary-grid">
+              <div>
+                <h4>Final Sentiment</h4>
+                <p>{analysis?.sentiment || "Neutral"}</p>
+              </div>
+              <div>
+                <h4>Core Intent</h4>
+                <p>{analysis?.intent || "General Query"}</p>
+              </div>
+            </div>
+            <div className="summary-notes">
+              <h4>Follow-up Actions</h4>
+              <p>Customer reported {analysis?.intent}. Recommend technical follow-up within 24 hours.</p>
+            </div>
+            <button onClick={() => window.location.reload()} className="close-summary">New Session</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

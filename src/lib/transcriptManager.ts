@@ -10,28 +10,26 @@ export function analyzeConversation(
   transcriptHistory: MessageTurn[],
   latestMessage: MessageTurn
 ): CopilotOutput {
-  // 1. Determine Sentiment first
   const sentiment = detectSentiment(transcriptHistory, latestMessage);
-
-  // 2. Determine Intent (Prioritize customer, sticky intent)
   const intent = detectIntent(transcriptHistory, latestMessage);
-
-  // 3. Check for Escalation (Based on current sentiment and intent history)
   const escalation = shouldEscalate(sentiment, intent, transcriptHistory);
-
-  // 4. Determine Risk (Consistent with escalation and intent)
   const { level: riskLevel, tags: riskTags } = detectRisk(
     latestMessage.text, 
     transcriptHistory, 
     intent, 
     escalation.needed
   );
-
-  // 5. Memory Facts (Customer only)
   const memoryFacts = extractMemory([...transcriptHistory, latestMessage]);
-
-  // 6. Suggestions
   const suggestions = generateSuggestions(intent, sentiment, riskLevel);
+
+  // --- Explainability Logic ---
+  const explanations = {
+    intent: `Detected based on keywords like "${latestMessage.text.split(' ').slice(0, 3).join(' ')}..."`,
+    sentiment: `Customer tone identified as ${sentiment} from linguistic patterns.`,
+    risk: riskLevel === "High" ? "Elevated risk due to explicit churn language or repeated frustration." : "Low systematic risk detected.",
+    escalation: escalation.needed ? "Escalation triggered by unresolved high-priority complaint history." : "Issues are currently manageable at L1 level.",
+    nextBestAction: `Confidence ${suggestions[0]?.confidence || 0.8}: Recommended based on ${intent} intent path.`
+  };
 
   return {
     intent,
@@ -40,6 +38,7 @@ export function analyzeConversation(
     riskTags,
     memoryFacts,
     suggestions,
-    escalation
+    escalation,
+    explanations
   };
 }

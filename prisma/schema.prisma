@@ -8,38 +8,49 @@ datasource db {
 }
 
 model Customer {
-  id           String    @id @default(cuid())
-  name         String
-  phoneNumber  String    @unique
-  planType     String    // Prepaid | Postpaid | Business
-  region       String
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
+  id                    String    @id @default(cuid())
+  name                  String
+  phoneNumber           String    @unique
+  planType              String
+  region                String
+  preferredLanguage     String    @default("English")
+  totalComplaints       Int       @default(0)
+  lastComplaintCategory String?
+  churnRisk             Float     @default(0.0)
+  retentionEligible     Boolean   @default(true)
+  vipStatus             Boolean   @default(false)
+  billingIssueCount     Int       @default(0)
+  networkIssueCount     Int       @default(0)
+  repeatedIssueCount    Int       @default(0)
+  escalationCount       Int       @default(0)
+  lastSentiment         String    @default("Neutral")
+  createdAt             DateTime  @default(now())
+  sessions              Session[]
 }
 
 model Session {
-  id            String             @id @default(cuid())
-  customerId    String?
-  customer      Customer?          @relation(fields: [customerId], references: [id])
-  channelType   String             // voice | simulation
-  status        String             @default("active") // active | completed | escalated
-  startedAt     DateTime           @default(now())
-  endedAt       DateTime?
-  turns         ConversationTurn[]
+  id             String             @id @default(cuid())
+  customerId     String?
+  channelType    String
+  status         String             @default("active")
+  startedAt      DateTime           @default(now())
+  endedAt        DateTime?
+  summary        CallSummary?
+  turns          ConversationTurn[]
   extractedFacts ExtractedFact[]
   memoryItems    MemoryItem[]
-  summary       CallSummary?
+  customer       Customer?          @relation(fields: [customerId], references: [id])
 }
 
 model ConversationTurn {
   id           String          @id @default(cuid())
   sessionId    String
-  session      Session         @relation(fields: [sessionId], references: [id])
   turnIndex    Int
   customerText String
   agentReply   String?
-  sourceType   String          // live | simulated
+  sourceType   String
   createdAt    DateTime        @default(now())
+  session      Session         @relation(fields: [sessionId], references: [id])
   insight      CopilotInsight?
   facts        ExtractedFact[]
 }
@@ -47,58 +58,58 @@ model ConversationTurn {
 model CopilotInsight {
   id                    String           @id @default(cuid())
   turnId                String           @unique
-  turn                  ConversationTurn @relation(fields: [turnId], references: [id])
   intent                String
   sentiment             String
   riskLevel             String
-  nextBestAction        String           // Store as JSON or first suggestion text
+  nextBestAction        String
   escalationRecommended Boolean          @default(false)
   escalationReason      String?
   confidenceScore       Float            @default(1.0)
   createdAt             DateTime         @default(now())
+  turn                  ConversationTurn @relation(fields: [turnId], references: [id])
 }
 
 model ExtractedFact {
-  id          String            @id @default(cuid())
-  sessionId   String
-  session     Session           @relation(fields: [sessionId], references: [id])
-  turnId      String?
-  turn        ConversationTurn? @relation(fields: [turnId], references: [id])
-  factKey     String
-  factValue   String
-  factType    String            // Account | Technical | Personal
-  createdAt   DateTime          @default(now())
+  id        String            @id @default(cuid())
+  sessionId String
+  turnId    String?
+  factKey   String
+  factValue String
+  factType  String
+  createdAt DateTime          @default(now())
+  turn      ConversationTurn? @relation(fields: [turnId], references: [id])
+  session   Session           @relation(fields: [sessionId], references: [id])
 }
 
 model MemoryItem {
-  id          String   @id @default(cuid())
-  sessionId   String
-  session     Session  @relation(fields: [sessionId], references: [id])
-  memoryText  String
-  memoryType  String   // Complaint | Preference | Note
-  importance  Int      @default(1) // 1-5
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  sessionId  String
+  memoryText String
+  memoryType String
+  importance Int      @default(1)
+  createdAt  DateTime @default(now())
+  session    Session  @relation(fields: [sessionId], references: [id])
 }
 
 model CallSummary {
   id               String   @id @default(cuid())
   sessionId        String   @unique
-  session          Session  @relation(fields: [sessionId], references: [id])
   overallIntent    String
   finalSentiment   String
   overallRisk      String
-  resolutionStatus String   // resolved | pending | escalated
+  resolutionStatus String
   summaryText      String
   followUpAction   String?
   createdAt        DateTime @default(now())
+  session          Session  @relation(fields: [sessionId], references: [id])
 }
 
 model SimulationScenario {
   id          String   @id @default(cuid())
   title       String
-  category    String   // Billing | Technical | Retentions
+  category    String
   description String
-  scriptJson  String   // JSON string of conversation turns
-  difficulty  String   // Easy | Medium | Hard
+  scriptJson  String
+  difficulty  String
   createdAt   DateTime @default(now())
 }
