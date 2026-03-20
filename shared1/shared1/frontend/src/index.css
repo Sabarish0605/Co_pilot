@@ -1,0 +1,88 @@
+:root {
+  --primary: #6366f1;
+  --primary-glow: rgba(99, 102, 241, 0.4);
+  --bg-dark: #000000;
+  --card-bg: #1e1e1e;
+  --text-main: #ffffff;
+  --text-muted: #71717a;
+  --ai-focus: #38bdf8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.glass {
+  background: rgba(30, 30, 30, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+}
+
+.ai-card {
+  background: transparent;
+  width: 100%;
+  max-width: 800px;
+  text-align: center;
+}
+
+.user-card {
+  background: var(--card-bg);
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  width: 100%;
+  max-width: 600px;
+}
+
+.waveform-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 60px;
+  justify-content: center;
+}
+
+.bar {
+  width: 3px;
+  background: var(--primary);
+  border-radius: 10px;
+  transition: height 0.15s ease;
+}
+
+.glow-pulse {
+  box-shadow: 0 0 30px var(--primary-glow);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--primary-glow); }
+  50% { box-shadow: 0 0 40px var(--primary-glow); }
+}
+
+/* Custom Scrollbar for transcript areas */
+.custom-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 10px;
+}

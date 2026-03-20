@@ -70,15 +70,45 @@ export default function CopilotDashboard() {
     });
   }, []);
 
-  const handleVoiceTranscript = (text: string, isFinal: boolean) => {
+  const handleVoiceTranscript = async (text: string, isFinal: boolean) => {
     if (isFinal) {
       setInterimTranscript("");
-      addTurn("customer", text);
       
-      setTimeout(() => {
-        const reply = MOCK_AGENT_REPLIES[Math.floor(Math.random() * MOCK_AGENT_REPLIES.length)];
-        addTurn("agent_ai", reply);
-      }, 1200);
+      const customerTurn: MessageTurn = {
+        turnId: Date.now(),
+        speaker: 'customer',
+        text,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setTranscript(prev => [...prev, customerTurn]);
+      setIsLoading(true);
+
+      try {
+        const resp = await fetch('/api/chat/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcriptHistory: transcript, latestMessage: customerTurn })
+        });
+
+        if (!resp.ok) throw new Error("Orchestrator failed");
+        const data = await resp.json();
+
+        setAnalysis(data.copilot);
+
+        const agentTurn: MessageTurn = {
+          turnId: Date.now() + 1,
+          speaker: 'agent_ai',
+          text: data.agent.reply,
+          timestamp: new Date().toLocaleTimeString()
+        };
+        setTranscript(prev => [...prev, agentTurn]);
+
+      } catch (err) {
+        console.error("Orchestrator error:", err);
+      } finally {
+        setIsLoading(false);
+      }
     } else {
       setInterimTranscript(text);
     }

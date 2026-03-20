@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id           String    @id @default(cuid())
+  name         String
+  phoneNumber  String    @unique
+  planType     String    // Prepaid | Postpaid | Business
+  region       String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id            String             @id @default(cuid())
+  customerId    String?
+  customer      Customer?          @relation(fields: [customerId], references: [id])
+  channelType   String             // voice | simulation
+  status        String             @default("active") // active | completed | escalated
+  startedAt     DateTime           @default(now())
+  endedAt       DateTime?
+  turns         ConversationTurn[]
+  extractedFacts ExtractedFact[]
+  memoryItems    MemoryItem[]
+  summary       CallSummary?
+}
+
+model ConversationTurn {
+  id           String          @id @default(cuid())
+  sessionId    String
+  session      Session         @relation(fields: [sessionId], references: [id])
+  turnIndex    Int
+  customerText String
+  agentReply   String?
+  sourceType   String          // live | simulated
+  createdAt    DateTime        @default(now())
+  insight      CopilotInsight?
+  facts        ExtractedFact[]
+}
+
+model CopilotInsight {
+  id                    String           @id @default(cuid())
+  turnId                String           @unique
+  turn                  ConversationTurn @relation(fields: [turnId], references: [id])
+  intent                String
+  sentiment             String
+  riskLevel             String
+  nextBestAction        String           // Store as JSON or first suggestion text
+  escalationRecommended Boolean          @default(false)
+  escalationReason      String?
+  confidenceScore       Float            @default(1.0)
+  createdAt             DateTime         @default(now())
+}
+
+model ExtractedFact {
+  id          String            @id @default(cuid())
+  sessionId   String
+  session     Session           @relation(fields: [sessionId], references: [id])
+  turnId      String?
+  turn        ConversationTurn? @relation(fields: [turnId], references: [id])
+  factKey     String
+  factValue   String
+  factType    String            // Account | Technical | Personal
+  createdAt   DateTime          @default(now())
+}
+
+model MemoryItem {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id])
+  memoryText  String
+  memoryType  String   // Complaint | Preference | Note
+  importance  Int      @default(1) // 1-5
+  createdAt   DateTime @default(now())
+}
+
+model CallSummary {
+  id               String   @id @default(cuid())
+  sessionId        String   @unique
+  session          Session  @relation(fields: [sessionId], references: [id])
+  overallIntent    String
+  finalSentiment   String
+  overallRisk      String
+  resolutionStatus String   // resolved | pending | escalated
+  summaryText      String
+  followUpAction   String?
+  createdAt        DateTime @default(now())
+}
+
+model SimulationScenario {
+  id          String   @id @default(cuid())
+  title       String
+  category    String   // Billing | Technical | Retentions
+  description String
+  scriptJson  String   // JSON string of conversation turns
+  difficulty  String   // Easy | Medium | Hard
+  createdAt   DateTime @default(now())
+}
