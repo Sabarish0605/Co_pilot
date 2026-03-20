@@ -1,10 +1,17 @@
 import { prisma } from './prisma'
 import { MessageTurn, CopilotOutput } from './types'
 
+// --- Utility ---
+export function normalizePhoneNumber(phoneNumber: string) {
+  // Simple hackathon normalization: keep only digits
+  return phoneNumber.replace(/\D/g, '')
+}
+
 // --- Customer Helpers ---
 export async function getCustomerByPhoneNumber(phoneNumber: string) {
+  const norm = normalizePhoneNumber(phoneNumber);
   return prisma.customer.findUnique({
-    where: { phoneNumber }
+    where: { phoneNumber: norm }
   })
 }
 
@@ -14,12 +21,13 @@ export async function getOrCreateCustomerByPhoneNumber(data: {
   region?: string
   planType?: string
 }) {
+  const norm = normalizePhoneNumber(data.phoneNumber);
   return prisma.customer.upsert({
-    where: { phoneNumber: data.phoneNumber },
+    where: { phoneNumber: norm },
     update: {},
     create: {
-      phoneNumber: data.phoneNumber,
-      name: data.name || "Unknown Customer",
+      phoneNumber: norm,
+      name: data.name || "Customer_" + norm.slice(-4),
       region: data.region || "Default Region",
       planType: data.planType || "Prepaid",
     }
@@ -32,12 +40,21 @@ export async function getCustomerProfile(customerId: string) {
   })
 }
 
-export async function getRecentCustomerSessions(customerId: string, limit: number = 5) {
+export async function getRecentCustomerSessions(customerId: string, limit: number = 3) {
   return prisma.session.findMany({
     where: { customerId },
     orderBy: { startedAt: 'desc' },
     take: limit,
-    include: { turns: { include: { insight: true } }, summary: true }
+    include: { summary: true }
+  })
+}
+
+export async function getCustomerMemories(customerId: string, limit: number = 10) {
+  // Prisma relation: MemoryItem -> Session -> Customer
+  return prisma.memoryItem.findMany({
+    where: { session: { customerId } },
+    orderBy: { createdAt: 'desc' },
+    take: limit
   })
 }
 
@@ -45,15 +62,19 @@ export async function getRecentCustomerSessions(customerId: string, limit: numbe
 export function buildRelevantCustomerContext(data: {
   customer: any,
   recentSessions: any[],
+  memories: any[],
   currentUtterance: string
 }) {
-  const { customer, recentSessions, currentUtterance } = data;
+  const { customer, recentSessions, memories, currentUtterance } = data;
   const t = currentUtterance.toLowerCase();
 
   const history = {
+    totalComplaints: customer.totalComplaints,
+    lastComplaintCategory: customer.lastComplaintCategory,
     billingIssues: customer.billingIssueCount,
     networkIssues: customer.networkIssueCount,
-    escalations: customer.escalationCount
+    escalations: customer.escalationCount,
+    churnRisk: customer.churnRisk
   };
 
   const personalizationHints: string[] = [];
@@ -62,18 +83,23 @@ export function buildRelevantCustomerContext(data: {
 
   // Logic for Telecom scenarios
   if (customer.vipStatus) {
-    personalizationHints.push("VIP Customer: Use premium handling and direct routing.");
+    personalizationHints.push("VIP Customer: Prioritize loyalty and avoid generic troubleshooting script.");
     recommendedTone = "premium";
   }
 
-  if (customer.churnRiskScore > 0.7) {
-    retentionSignals.push("CRITICAL CHURN RISK: Customer has high dissatisfaction history.");
+  if (customer.churnRisk > 0.6) {
+    retentionSignals.push("CHURN WARNING: Customer has mentioned port-out or cancellation recently.");
     recommendedTone = "empathetic";
   }
 
+  // Use recent memories for context
+  const relevantMemories = memories
+    .filter(m => t.split(' ').some(word => word.length > 3 && m.memoryText.toLowerCase().includes(word)))
+    .map(m => m.memoryText);
+
   if (t.includes("bill") || t.includes("charge")) {
     if (history.billingIssues > 2) {
-      personalizationHints.push("Repeated billing issues: Customer is likely frustrated with previous resolutions.");
+      personalizationHints.push("History of multiple billing disputes. Likely skeptical of automated billing explanations.");
       recommendedTone = "empathetic";
     }
   }
@@ -81,16 +107,23 @@ export function buildRelevantCustomerContext(data: {
   return {
     customerSnapshot: {
       name: customer.name,
-      planType: customer.planType,
+      phoneNumber: customer.phoneNumber,
+      currentPlan: customer.planType,
       region: customer.region,
-      vipStatus: customer.vipStatus,
-      churnRisk: customer.churnRisk
+      preferredLanguage: customer.preferredLanguage,
+      vipStatus: customer.vipStatus
     },
-    supportHistory: history,
-    relevantMemories: [], // Could pull from MemoryItem table
+    supportHistory: {
+      totalComplaints: history.totalComplaints,
+      lastComplaintCategory: history.lastComplaintCategory,
+      churnRiskScore: history.churnRisk,
+      repeatedIssueCount: customer.repeatedIssueCount
+    },
+    relevantMemories,
     personalizationHints,
     retentionSignals,
-    recommendedTone
+    recommendedTone,
+    lastSessionSummary: recentSessions[0]?.summary?.summaryText || "No previous session summary available."
   };
 }
 
@@ -100,7 +133,7 @@ export async function updateCustomerAfterCall(data: {
   sessionId: string,
   latestInsight?: CopilotOutput
 }) {
-  const { customerId, latestInsight } = data;
+  const { customerId, sessionId, latestInsight } = data;
   if (!latestInsight) return;
 
   const updateData: any = {
@@ -123,6 +156,18 @@ export async function updateCustomerAfterCall(data: {
 
   if (latestInsight.escalation.needed) {
     updateData.escalationCount = { increment: 1 };
+  }
+
+  // Update Memory: If high importance fact exists
+  if (latestInsight.memoryFacts && latestInsight.memoryFacts.length > 0) {
+    await prisma.memoryItem.create({
+      data: {
+        sessionId,
+        memoryText: latestInsight.memoryFacts[0],
+        memoryType: 'Knowledge',
+        importance: 2
+      }
+    });
   }
 
   return prisma.customer.update({
@@ -176,9 +221,12 @@ export async function saveCopilotInsight(turnId: string, insight: CopilotOutput)
       sentiment: insight.sentiment,
       riskLevel: insight.riskLevel,
       nextBestAction: insight.suggestions[0]?.text || 'No suggestion provided',
-      escalationRecommended: insight.escalation.needed,
-      escalationReason: insight.escalation.reason,
+      escalationRecommended: insight.escalationRecommended || insight.escalation.needed,
+      escalationReason: insight.escalationReason || insight.escalation.reason,
       confidenceScore: insight.suggestions[0]?.confidence || 1.0,
+      policyBoundaryStatus: insight.policyBoundaryStatus,
+      policyReason: insight.policyReason,
+      policyEscalationTriggered: insight.escalationRecommended,
     },
   })
 }
@@ -219,6 +267,8 @@ export async function saveCallSummary(sessionId: string, summary: {
   resolutionStatus: string
   summaryText: string
   followUpAction?: string
+  structuredSummary?: string
+  commitmentsMade?: string
 }) {
   return prisma.callSummary.create({
     data: {

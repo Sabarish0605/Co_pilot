@@ -3,6 +3,7 @@ export type MessageTurn = {
   speaker: "customer" | "agent_ai"
   text: string
   timestamp: string
+  provider?: "online" | "offline"
 }
 
 export type CopilotOutput = {
@@ -29,6 +30,11 @@ export type CopilotOutput = {
     escalation?: string
     nextBestAction?: string
   }
+  // Policy grounding enrichment
+  policyBoundaryStatus?: 'safe' | 'caution' | 'crossed'
+  policyReason?: string
+  escalationRecommended?: boolean
+  escalationReason?: string
 }
 
 export interface CustomerProfile {
@@ -44,6 +50,7 @@ export interface CustomerProfile {
   retentionEligible: boolean
   vipStatus: boolean
   lastSentiment: string
+  lastSessionSummary?: string
 }
 
 export interface CustomerContext {
@@ -52,9 +59,11 @@ export interface CustomerContext {
     billingIssues: number
     networkIssues: number
     escalations: number
+    lastComplaintCategory?: string
   }
   relevantMemories: string[]
   personalizationHints: string[]
   retentionSignals: string[]
   recommendedTone: "neutral" | "empathetic" | "assertive" | "premium"
+  lastSessionSummary?: string
 }

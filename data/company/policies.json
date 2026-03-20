@@ -1,0 +1,83 @@
+{
+  "companyProfile": {
+    "companyName": "TelcoConnect",
+    "brandName": "ConnectAI",
+    "supportChannels": {
+      "voice": "Primary",
+      "web": "Secondary",
+      "retail": "Escalation ONLY"
+    },
+    "customerTypes": {
+      "Standard": "General queue",
+      "Premier": "Priority queue",
+      "Enterprise": "Specialized team"
+    },
+    "escalationTeams": {
+      "Manager": "L2 Support",
+      "Billing_Ops": "Claims and Refunds",
+      "Network_Eng": "Outage and Hardware"
+    }
+  },
+  "globalAgentRules": {
+    "allowedGeneralBehaviors": [
+      "Provide empathetic listening",
+      "Use approved scripts for plan details",
+      "Confirm identity before modifying account",
+      "Advise customers of their current billing cycle",
+      "Explain policy-based limitations clearly"
+    ],
+    "forbiddenGeneralBehaviors": [
+      "Make promises beyond frontline authority",
+      "Confirm full SSN or credit card numbers verbally",
+      "Speculate on outage resolution times without dispatcher confirmation",
+      "Offer cash refunds (only bill credits allowed)",
+      "Guarantee same-day technician arrival"
+    ],
+    "mandatoryDisclosures": {
+      "recording": "All calls are recorded for quality assurance.",
+      "identity": "I must verify your identity before accessing account details."
+    },
+    "promiseRestrictions": {
+      "maxRefund": 25.0,
+      "maxCredit": 50.0
+    },
+    "whenToEscalate": [
+      "Customer mentions legal action",
+      "Customer requests more than $50 in credits",
+      "Customer mentions BBB or FCC complaint",
+      "Customer is abusive or hostile"
+    ]
+  },
+  "policyCategories": [
+    {
+      "id": "BILL-001",
+      "category": "Billing",
+      "title": "Refund and Credit Policy",
+      "summary": "Frontline agents can issue up to $25 in one-time credits for documented billing errors.",
+      "scope": "Billing disputes only",
+      "supportedIssues": ["Incorrect charge", "Double billing", "Late fee waiver"],
+      "unsupportedRequests": ["Cash refund", "Retrospective loyalty discount"],
+      "allowedActions": ["Apply bill credit", "Waive late fee once"],
+      "forbiddenPromises": ["Refund to credit card", "Lower monthly rate permanently"],
+      "standardHandlingFlow": ["Verify charge", "Calculate credit", "Document reason"],
+      "escalationTriggers": ["Request > $50", "Repeated billing error claim"],
+      "safeResponseGuidance": ["I can apply a one-time credit of $25.", "I'll forward this to billing ops for review."],
+      "keywords": ["bill", "charge", "money", "refund", "price", "cost", "credit"]
+    },
+    {
+      "id": "NET-002",
+      "category": "Network",
+      "title": "Service Outage Policy",
+      "summary": "No credits issued for standard maintenance windows. Credits for outages > 4 hours only.",
+      "scope": "Network and Connectivity",
+      "supportedIssues": ["No signal", "Slow data", "Dropped calls"],
+      "unsupportedRequests": ["New tower construction", "Indoor signal guarantee"],
+      "allowedActions": ["Run diagnostic", "Suggest device restart", "Check outage map"],
+      "forbiddenPromises": ["Guarantee speed", "Restore service in X minutes"],
+      "standardHandlingFlow": ["Identify location", "Check status", "Troubleshoot device"],
+      "escalationTriggers": ["Widespread outage confirmed", "Hospital or public safety line"],
+      "safeResponseGuidance": ["I'm running a diagnostic on your line now.", "Currently, there is no known outage in your area."],
+      "keywords": ["internet", "network", "signal", "tower", "data", "connection", "outage"]
+    }
+  ]
+}

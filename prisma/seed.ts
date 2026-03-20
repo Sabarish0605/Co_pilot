@@ -3,49 +3,82 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
-  console.log('🌱 Seeding simulation scenarios...')
+  console.log('🌱 Seeding high-impact demo data...')
 
+  // 1. High-Impact Scenarios
   const scenarios = [
     {
-      title: 'Duplicate Recharge Deduction',
+      title: 'Policy Restricted Refund',
       category: 'Billing',
-      difficulty: 'Easy',
-      description: 'Customer was charged twice for the same plan after a payment failure.',
+      difficulty: 'Expert',
+      description: 'Customer demanding a $200 refund for a missed technician visit.',
       scriptJson: JSON.stringify([
-        { speaker: 'customer', text: 'Hi, I noticed two charges on my account for the same data pack.' },
-        { speaker: 'agent_ai', text: 'I apologize for the confusion. Let me check your transaction history.' },
-        { speaker: 'customer', text: 'It says "Successful" for both, but I only bought it once.' }
+        { speaker: 'customer', text: 'The technician never showed up. It cost me a full day of work. I want a $200 credit immediately.' },
+        { speaker: 'agent_ai', text: 'I sincerely apologize. Let me check our credit limits and verify the appointment status.' },
+        { speaker: 'customer', text: 'I don\'t care about your limits. Either give me $200 or I\'ll sue the company.' }
       ])
     },
     {
-      title: 'Network Outage in Downtown',
+      title: 'Repeated Connectivity Failure',
       category: 'Technical',
-      difficulty: 'Medium',
-      description: 'Customer reporting intermittent data connectivity in a specific urban zone.',
-      scriptJson: JSON.stringify([
-        { speaker: 'customer', text: 'My internet keeps cutting out in the city center. It\'s been happening all day.' },
-        { speaker: 'agent_ai', text: 'I\'m sorry for the connectivity issues. Let me run a diagnostic on the local towers.' },
-        { speaker: 'customer', text: 'I need this fixed, I have an important meeting soon.' }
-      ])
-    },
-    {
-      title: 'Cancellation Threat - Porting Out',
-      category: 'Retentions',
       difficulty: 'Hard',
-      description: 'Long-term customer threatening to switch to a competitor for a better price.',
+      description: 'Third call this week about the same issue. High churn risk.',
       scriptJson: JSON.stringify([
-        { speaker: 'customer', text: 'I want to port my number to GlobalTel. Their monthly plan is $20 cheaper.' },
-        { speaker: 'agent_ai', text: 'We value your 5-year loyalty. Before you decide, let me see what exclusive offers I have for you.' },
-        { speaker: 'customer', text: 'It better be good, otherwise I\'m leaving today.' }
+        { speaker: 'customer', text: 'This is my third time calling! My data is still not working. This is useless.' },
+        { speaker: 'agent_ai', text: 'I can see your previous two tickets. I\'m so sorry they weren\'t resolved. This is being prioritized.' },
+        { speaker: 'customer', text: 'I want to speak to a manager. This is ridiculous.' }
       ])
     }
   ]
 
   for (const scenario of scenarios) {
-    await prisma.simulationScenario.create({
-      data: scenario
-    })
+    await prisma.simulationScenario.create({ data: scenario })
   }
+
+  // 2. Customers with Memory
+  await prisma.customer.upsert({
+     where: { phoneNumber: '555-0101' },
+     update: {},
+     create: {
+       name: 'Robert Vance',
+       phoneNumber: '555-0101',
+       planType: 'Standard Mobile',
+       region: 'Pacific',
+       totalComplaints: 5,
+       churnRisk: 85.0,
+       vipStatus: false,
+       lastSentiment: 'Frustrated',
+       sessions: {
+          create: {
+             channelType: 'voice',
+             status: 'completed',
+             memoryItems: {
+                createMany: {
+                   data: [
+                      { memoryText: 'Customer mentioned moving to a different state soon.', memoryType: 'Retention Risk' },
+                      { memoryText: 'Loves the 5G data speed when it works.', memoryType: 'Preference' }
+                   ]
+                }
+             }
+          }
+       }
+     }
+  });
+
+  await prisma.customer.upsert({
+    where: { phoneNumber: '555-0999' },
+    update: {},
+    create: {
+      name: 'Sarah Connor',
+      phoneNumber: '555-0999',
+      planType: 'Elite Corporate',
+      region: 'Central',
+      totalComplaints: 1,
+      churnRisk: 5.0,
+      vipStatus: true,
+      lastSentiment: 'Neutral',
+    }
+ });
 
   console.log('✅ Seeding complete.')
 }
